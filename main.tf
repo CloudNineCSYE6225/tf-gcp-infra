@@ -12,7 +12,7 @@ resource "google_compute_network" "vpc_name" {
 #create a "webapp" subnet for the VPC
 resource "google_compute_subnetwork" "webapp" {
   for_each = google_compute_network.vpc_name
-  name          = "${each.key}-webapp"
+ # name          = "${each.key}-webapp"
   ip_cidr_range = "10.1.0.0/24"
   region        = "us-east1"
   network       = each.value.self_link
