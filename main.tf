@@ -5,7 +5,7 @@ resource "google_compute_network" "vpc_name" {
   }
   name = each.key
   auto_create_subnetworks = false
-  routing_mode = "REGIONAL"
+  routing_mode = var.routing_mode
   delete_default_routes_on_create = true
 }
 
@@ -14,7 +14,7 @@ resource "google_compute_subnetwork" "webapp" {
   for_each = google_compute_network.vpc_name
   name          = "${each.key}-webapp"
   ip_cidr_range = var.webapp_subnet_cidr
-  region        = "us-east1"
+  region        = var.region
   network       = each.value.self_link
 }
 
@@ -23,7 +23,7 @@ resource "google_compute_subnetwork" "db" {
   for_each = google_compute_network.vpc_name
   name          = "${each.key}-db"
   ip_cidr_range = var.db_subnet_cidr
-  region        = "us-east1"
+  region        = var.region
   network       = each.value.self_link
 }
 
@@ -39,22 +39,22 @@ resource "google_compute_route" "webapp_route" {
 
 # Firewall rule to allow traffic to the application port and deny SSH
 resource "google_compute_firewall" "allow_application_traffic" {
-  for_each = google_compute_subnetwork.webapp
+  for_each = google_compute_network.vpc_name
   name    = "${each.key}-allow-application-traffic"
-  network = each.value.network
+  network = each.value.self_link
 
   allow {
     protocol = "tcp"
-    ports    = ["8080"] # Replace with your application's port
+    ports    = ["8080"]
   }
 
   source_ranges = ["0.0.0.0/0"]
 }
 
 resource "google_compute_firewall" "deny_ssh" {
-  for_each = google_compute_subnetwork.webapp
+  for_each = google_compute_network.vpc_name
   name    = "${each.key}-deny-ssh"
-  network = each.value.network
+  network = each.value.self_link
 
   deny {
     protocol = "tcp"
@@ -64,16 +64,76 @@ resource "google_compute_firewall" "deny_ssh" {
   source_ranges = ["0.0.0.0/0"]
 }
 
+resource "google_compute_global_address" "private_ip_block" {
+  for_each = toset(var.vpc_name)
+  name         = "private-ip-block"
+  purpose      = "VPC_PEERING"
+  address_type = "INTERNAL"
+  ip_version   = "IPV4"
+  prefix_length = 16
+  network       = google_compute_network.vpc_name[each.value].self_link
+}
+
+resource "google_service_networking_connection" "private_vpc_connection" {
+  for_each = toset(var.vpc_name)
+  network       = google_compute_network.vpc_name[each.value].self_link
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_block[each.value].name]
+}
+
+resource "google_sql_database_instance" "mysql_instance" {
+  for_each      = google_compute_network.vpc_name
+  name          = "mysql-instance-${each.key}"
+  database_version = "MYSQL_8_0"
+  region = var.region
+  deletion_protection = false
+  
+
+  settings {
+    tier = "db-f1-micro"
+    availability_type = "REGIONAL"
+    disk_type         = var.db_disk_type
+    disk_size         = var.db_disk_size
+
+    ip_configuration {
+      ipv4_enabled  = false
+      private_network = google_compute_network.vpc_name[each.key].self_link
+    }
+
+    backup_configuration{
+      binary_log_enabled = true
+      enabled = true
+    }
+
+}
+  depends_on = [google_service_networking_connection.private_vpc_connection]
+}
+
+resource "google_sql_database" "mysql_database" {
+  for_each = google_compute_network.vpc_name
+  name = "Users"
+  instance = google_sql_database_instance.mysql_instance[each.key].name
+}
+
+resource "google_sql_user" "user" {
+  for_each = google_compute_network.vpc_name
+  name = "webapp-${each.key}"
+  instance = google_sql_database_instance.mysql_instance[each.key].name
+  password = random_password.password.result
+}
+
+resource "random_password" "password" {
+  length           = 10
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
 #Compute Engine instance with a custom boot disk
 resource "google_compute_instance" "custom_instance" {
   for_each = google_compute_subnetwork.webapp
   name         = "${each.key}-instance"
-  machine_type = "n1-standard-1" 
-  zone         = "us-east1-b"    
-
-  network_interface {
-    subnetwork = each.value.self_link
-  }
+  machine_type = var.machine_type
+  zone         = var.zone  
 
   boot_disk {
     initialize_params {
@@ -82,5 +142,24 @@ resource "google_compute_instance" "custom_instance" {
       size  = 100
     }
   }
+
+  network_interface {
+    network    = google_compute_network.vpc_name[each.key].self_link
+    subnetwork = each.value.self_link
+    access_config {}
+  }
   
+  metadata_startup_script = <<-EOF
+    #!/bin/bash
+    export DB_HOST="${google_sql_database_instance.mysql_instance[each.key].private_ip_address}"
+    export DB_USER="${google_sql_user.user[each.key].name}"
+    export DB_PASS="${random_password.password.result}"
+    export DB_NAME="${google_sql_database.mysql_database[each.key].name}"
+    
+    echo "SQLALCHEMY_DATABASE_URI=mysql+pymysql://$DB_USER:$DB_PASS@$DB_HOST/$DB_NAME" > /tmp/db_properties.ini
+    
+    
+
+  EOF
 }
+
