@@ -148,6 +148,11 @@ resource "google_compute_instance" "custom_instance" {
     subnetwork = each.value.self_link
     access_config {}
   }
+
+  service_account {
+    email  = google_service_account.webapp_service_acc.email
+    scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+  }
   
   metadata_startup_script = <<-EOF
     #!/bin/bash
@@ -164,3 +169,36 @@ resource "google_compute_instance" "custom_instance" {
   EOF
 }
 
+resource "google_dns_record_set" "a" {
+  for_each = google_compute_instance.custom_instance
+  managed_zone = "bharath-bhaskar-name"
+  name         = "bharathbhaskar.me."
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [each.value.network_interface[0].access_config[0].nat_ip]
+}
+
+#Service Account
+resource "google_service_account" "webapp_service_acc" {
+  account_id   = "webapp-service-acc"
+  display_name = "VM Service Account"
+}
+
+#Bind IAM roles to the Service Account
+resource "google_project_iam_binding" "logging_admin_binding" {
+  project = var.project_id
+  role    = "roles/logging.admin"
+  
+  members = [
+    "serviceAccount:${google_service_account.webapp_service_acc.email}"
+  ]
+}
+
+resource "google_project_iam_binding" "monitoring_metric_writer_binding" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  
+  members = [
+    "serviceAccount:${google_service_account.webapp_service_acc.email}"
+  ]
+}

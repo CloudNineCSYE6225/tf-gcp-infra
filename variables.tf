@@ -14,7 +14,7 @@ variable "vpc_name" {
 variable "zone"{
   description = "The name of the zone"
   type        = string
-  default     = "us-central1-a"
+  default     = "us-west4-b"
 }
 
 variable "routing_mode"{
@@ -38,7 +38,7 @@ variable "db_subnet_cidr" {
 variable "machine_type" {
   description = "The machine type"
   type        = string
-  default     = "n1-standard-1" 
+  default     = "n1-standard-4" 
 }
 
 variable "db_disk_type"{
@@ -56,7 +56,7 @@ variable "db_disk_size"{
 variable "custom_image" {
   description = "The custom image for the boot disk of the compute instance"
   type        = string
-  default     = "centos-8-image-20240314042603"
+  default     = "centos-8-image-20240320234411"
 }
 
 variable "webapp_reserve_address" {
@@ -68,5 +68,5 @@ variable "webapp_reserve_address" {
 variable "region" {
   description = "Region"
   type        =  string
-  default     = "us-central1"
+  default     = "us-west4"
 }
