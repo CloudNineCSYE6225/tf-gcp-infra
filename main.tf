@@ -203,5 +203,3 @@ resource "google_project_iam_binding" "monitoring_metric_writer_binding" {
     "serviceAccount:${google_service_account.webapp_service_acc.email}"
   ]
 }
-
-}
