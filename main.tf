@@ -148,7 +148,7 @@ resource "google_compute_instance" "custom_instance" {
     subnetwork = each.value.self_link
     access_config {}
   }
-
+  
   service_account {
     email  = google_service_account.webapp_service_acc.email
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -167,6 +167,7 @@ resource "google_compute_instance" "custom_instance" {
     
 
   EOF
+
 }
 
 resource "google_dns_record_set" "a" {
@@ -201,4 +202,6 @@ resource "google_project_iam_binding" "monitoring_metric_writer_binding" {
   members = [
     "serviceAccount:${google_service_account.webapp_service_acc.email}"
   ]
+}
+
 }
