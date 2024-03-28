@@ -52,16 +52,16 @@ resource "google_compute_firewall" "allow_application_traffic" {
 }
 
 resource "google_compute_firewall" "deny_ssh" {
-  for_each = google_compute_network.vpc_name
-  name    = "${each.key}-deny-ssh"
-  network = each.value.self_link
+ for_each = google_compute_network.vpc_name
+ name    = "${each.key}-deny-ssh"
+ network = each.value.self_link
 
-  deny {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
+ deny {
+   protocol = "tcp"
+   ports    = ["22"]
+ }
 
-  source_ranges = ["0.0.0.0/0"]
+ source_ranges = ["0.0.0.0/0"]
 }
 
 resource "google_compute_global_address" "private_ip_block" {
@@ -111,7 +111,7 @@ resource "google_sql_database_instance" "mysql_instance" {
 
 resource "google_sql_database" "mysql_database" {
   for_each = google_compute_network.vpc_name
-  name = "Users"
+  name = var.sql_database_name
   instance = google_sql_database_instance.mysql_instance[each.key].name
 }
 
@@ -172,8 +172,8 @@ resource "google_compute_instance" "custom_instance" {
 
 resource "google_dns_record_set" "a" {
   for_each = google_compute_instance.custom_instance
-  managed_zone = "bharath-bhaskar-name"
-  name         = "bharathbhaskar.me."
+  managed_zone = var.dns_managed_zone
+  name         = var.domain_name
   type         = "A"
   ttl          = 300
   rrdatas      = [each.value.network_interface[0].access_config[0].nat_ip]
@@ -202,4 +202,68 @@ resource "google_project_iam_binding" "monitoring_metric_writer_binding" {
   members = [
     "serviceAccount:${google_service_account.webapp_service_acc.email}"
   ]
+}
+
+resource "google_project_iam_binding" "pubsub_publisher_binding" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  
+  members = [
+    "serviceAccount:${google_service_account.webapp_service_acc.email}"
+  ]
+}
+
+resource "google_storage_bucket" "cloud_functions_bucket" {
+  name     = "dev-func-bucket"
+  location = "US"
+}
+
+resource "google_cloudfunctions_function" "verify_email_function" {
+  name        = "verify-email-id"
+  description = "Sends verification emails to new users"
+  runtime     = "python39"
+
+  available_memory_mb   = 128
+  source_archive_bucket = google_storage_bucket.cloud_functions_bucket.name
+  source_archive_object = google_storage_bucket_object.function_archive.name
+  entry_point = "send_verification_email"
+
+  environment_variables = {
+    MAILGUN_DOMAIN = "bharathbhaskar.me"
+    MAILGUN_API_KEY = "3aa5b7aec14341f5adb31b70619144ff-f68a26c9-44c6d1a4"
+  }
+
+  service_account_email = google_service_account.cloud_function_service_acc.email
+
+  event_trigger {
+    event_type = "google.pubsub.topic.publish"
+    resource = google_pubsub_topic.verify_email_topic.id
+    failure_policy {
+      retry = false
+    }
+  }
+}
+
+
+resource "google_storage_bucket_object" "function_archive" {
+  name   = "verify-email-function.zip"
+  bucket = google_storage_bucket.cloud_functions_bucket.name
+  source = "./function.zip" 
+}
+
+
+resource "google_pubsub_topic" "verify_email_topic" {
+  name = "verify_email_id"
+}
+
+resource "google_service_account" "cloud_function_service_acc" {
+  account_id   = "cloud-function-service-acc"
+  display_name = "Cloud Function Service Account"
+}
+
+resource "google_pubsub_subscription" "verify_email_subscription" {
+  name  = "verify-email-subscription"
+  topic = google_pubsub_topic.verify_email_topic.name
+ 
+  ack_deadline_seconds = 20
 }

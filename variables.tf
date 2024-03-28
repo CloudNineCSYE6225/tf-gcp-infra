@@ -8,7 +8,7 @@ variable "project_id" {
 variable "vpc_name" {
   description = "The name of the VPC network"
   type        = list(string)
-  default     = ["cloud-vpc10"]
+  default     = ["cloud-vpc4"]
 }
 
 variable "zone"{
@@ -56,7 +56,7 @@ variable "db_disk_size"{
 variable "custom_image" {
   description = "The custom image for the boot disk of the compute instance"
   type        = string
-  default     = "centos-8-image-20240320234411"
+  default     = "centos-8-image-20240328190006"
 }
 
 variable "webapp_reserve_address" {
@@ -69,4 +69,22 @@ variable "region" {
   description = "Region"
   type        =  string
   default     = "us-west4"
+}
+
+variable "dns_managed_zone" {
+  description = "DNS managed zone"
+  type        =  string
+  default     = "bharath-bhaskar-name"
+}
+
+variable "domain_name" {
+  description = "DNS domain name"
+  type        =  string
+  default     = "bharathbhaskar.me."
+}
+
+variable "sql_database_name" {
+  description = "Sql Database Name"
+  type        =  string
+  default     = "Users"
 }
