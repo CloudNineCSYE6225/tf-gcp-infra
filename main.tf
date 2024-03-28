@@ -265,5 +265,5 @@ resource "google_pubsub_subscription" "verify_email_subscription" {
   name  = "verify-email-subscription"
   topic = google_pubsub_topic.verify_email_topic.name
  
-  ack_deadline_seconds = 20
+  ack_deadline_seconds = 20 
 }
