@@ -144,7 +144,7 @@ resource "google_compute_instance_template" "webapp_template" {
     network = google_compute_network.vpc_name[var.vpc_name[0]].self_link
     subnetwork = google_compute_subnetwork.webapp[var.vpc_name[0]].self_link
 
-    access_config {}
+    # access_config {}
   }
 
   service_account {
