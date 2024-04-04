@@ -111,7 +111,7 @@ resource "google_sql_database_instance" "mysql_instance" {
 
 resource "google_sql_database" "mysql_database" {
   for_each = google_compute_network.vpc_name
-  name = var.sql_database_name
+  name = "Users"
   instance = google_sql_database_instance.mysql_instance[each.key].name
 }
 
@@ -124,59 +124,141 @@ resource "google_sql_user" "user" {
 
 resource "random_password" "password" {
   length           = 10
-  special          = true
+  special          = false
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-#Compute Engine instance with a custom boot disk
-resource "google_compute_instance" "custom_instance" {
-  for_each = google_compute_subnetwork.webapp
-  name         = "${each.key}-instance"
-  machine_type = var.machine_type
-  zone         = var.zone  
+resource "google_compute_instance_template" "webapp_template" {
+  name_prefix   = "webapp-instance-template-"
+  machine_type  = var.machine_type
 
-  boot_disk {
-    initialize_params {
-      image = var.custom_image  # dynamic variable for image url
-      type  = "pd-balanced"
-      size  = 100
-    }
+  disk {
+    source_image = var.custom_image
+    auto_delete  = true
+    boot         = true
+    disk_size_gb = 100  // Correctly specifying the disk size here
+    disk_type    = "pd-balanced"
   }
 
   network_interface {
-    network    = google_compute_network.vpc_name[each.key].self_link
-    subnetwork = each.value.self_link
+    network = google_compute_network.vpc_name[var.vpc_name[0]].self_link
+    subnetwork = google_compute_subnetwork.webapp[var.vpc_name[0]].self_link
+
     access_config {}
   }
-  
+
   service_account {
     email  = google_service_account.webapp_service_acc.email
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
   }
-  
+
   metadata_startup_script = <<-EOF
     #!/bin/bash
-    export DB_HOST="${google_sql_database_instance.mysql_instance[each.key].private_ip_address}"
-    export DB_USER="${google_sql_user.user[each.key].name}"
+    export DB_HOST="${google_sql_database_instance.mysql_instance[var.vpc_name[0]].private_ip_address}"
+    export DB_USER="${google_sql_user.user[var.vpc_name[0]].name}"
     export DB_PASS="${random_password.password.result}"
-    export DB_NAME="${google_sql_database.mysql_database[each.key].name}"
+    export DB_NAME="Users"
     
-    echo "SQLALCHEMY_DATABASE_URI=mysql+pymysql://$DB_USER:$DB_PASS@$DB_HOST/$DB_NAME" > /opt/csye6225/db_properties.ini
+    echo "SQLALCHEMY_DATABASE_URI=mysql+pymysql://$${DB_USER}:$${DB_PASS}@$${DB_HOST}/$${DB_NAME}" > /opt/csye6225/db_properties.ini
     sudo chown csye6225:csye6225 /opt/csye6225/db_properties.ini
     sudo chmod 660 /opt/csye6225/db_properties.ini
-    
-
   EOF
+}
+
+
+resource "google_compute_health_check" "webapp_health_check" {
+  name               = "webapp-health-check"
+  check_interval_sec = 30
+  timeout_sec        = 10
+
+  http_health_check {
+    port         = 8080
+    request_path = "/healthz"  
+  }
+}
+
+resource "google_compute_region_instance_group_manager" "webapp_group_manager" {
+  name = "webapp-instance-group-manager"
+
+  base_instance_name = "webapp"
+  region             = var.region
+  version {
+    instance_template = google_compute_instance_template.webapp_template.self_link
+    name = "v1"
+  }
+
+  named_port {
+    name = "http"
+    port = 8080
+  }
+
 
 }
 
-resource "google_dns_record_set" "a" {
-  for_each = google_compute_instance.custom_instance
-  managed_zone = var.dns_managed_zone
+resource "google_compute_region_autoscaler" "webapp_autoscaler" {
+  name   = "webapp-autoscaler"
+  region = var.region
+  target = google_compute_region_instance_group_manager.webapp_group_manager.self_link
+  
+  autoscaling_policy {
+    max_replicas    = 10
+    min_replicas    = 1
+    cooldown_period = 60
+    cpu_utilization {
+      target = 0.05
+    }
+  }
+}
+
+
+resource "google_compute_managed_ssl_certificate" "webapp_ssl_cert" {
+  name    = "webapp-ssl-cert"
+  managed {
+    domains = ["bharathbhaskar.me"]
+  }
+}
+
+resource "google_compute_url_map" "webapp_url_map" {
+  name            = "webapp-url-map"
+  default_service = google_compute_backend_service.webapp_backend.self_link
+}
+
+resource "google_compute_target_https_proxy" "webapp_https_proxy" {
+  name             = "webapp-https-proxy"
+  url_map          = google_compute_url_map.webapp_url_map.self_link
+  ssl_certificates = [google_compute_managed_ssl_certificate.webapp_ssl_cert.self_link]
+}
+
+resource "google_compute_global_forwarding_rule" "webapp_https_forwarding_rule" {
+  name       = "webapp-https-forwarding-rule"
+  target     = google_compute_target_https_proxy.webapp_https_proxy.self_link
+  port_range = "443"
+}
+
+resource "google_dns_record_set" "webapp_dns" {
   name         = var.domain_name
   type         = "A"
   ttl          = 300
-  rrdatas      = [each.value.network_interface[0].access_config[0].nat_ip]
+  managed_zone = var.dns_managed_zone
+  rrdatas      = [google_compute_global_forwarding_rule.webapp_https_forwarding_rule.ip_address]
+}
+
+
+resource "google_compute_backend_service" "webapp_backend" {
+  name        = "webapp-backend-service"
+  protocol    = "HTTP"
+  port_name   = "http"
+  timeout_sec = 10
+
+
+  health_checks = [google_compute_health_check.webapp_health_check.self_link]
+
+  backend {
+    group = google_compute_region_instance_group_manager.webapp_group_manager.instance_group
+  }
+
+  // Enable Cloud CDN (optional)
+  enable_cdn = false
 }
 
 #Service Account
@@ -214,12 +296,12 @@ resource "google_project_iam_binding" "pubsub_publisher_binding" {
 }
 
 resource "google_storage_bucket" "cloud_functions_bucket" {
-  name     = "dev-func-bucket"
+  name     = "cloud-function-bucketz"
   location = "US"
 }
 
 resource "google_cloudfunctions_function" "verify_email_function" {
-  name        = "verify-email-id"
+  name        = "verify-email"
   description = "Sends verification emails to new users"
   runtime     = "python39"
 
@@ -248,12 +330,12 @@ resource "google_cloudfunctions_function" "verify_email_function" {
 resource "google_storage_bucket_object" "function_archive" {
   name   = "verify-email-function.zip"
   bucket = google_storage_bucket.cloud_functions_bucket.name
-  source = "./function.zip" 
+  source = "./function.zip" # Adjust this to the path where your zipped function code is located
 }
 
 
 resource "google_pubsub_topic" "verify_email_topic" {
-  name = "verify_email_id"
+  name = "verify_email"
 }
 
 resource "google_service_account" "cloud_function_service_acc" {
@@ -264,6 +346,9 @@ resource "google_service_account" "cloud_function_service_acc" {
 resource "google_pubsub_subscription" "verify_email_subscription" {
   name  = "verify-email-subscription"
   topic = google_pubsub_topic.verify_email_topic.name
- 
-  ack_deadline_seconds = 20 
+
+  ack_deadline_seconds = 20
 }
+
+
+

@@ -8,7 +8,7 @@ variable "project_id" {
 variable "vpc_name" {
   description = "The name of the VPC network"
   type        = list(string)
-  default     = ["cloud-vpc4"]
+  default     = ["cloud-vpc25"]
 }
 
 variable "zone"{
@@ -32,7 +32,7 @@ variable "webapp_subnet_cidr" {
 variable "db_subnet_cidr" {
   description = "The IP CIDR range for the db subnet"
   type        = string
-  default     = "10.2.0.0/24"
+  default     = "10.3.0.0/24"
 }
 
 variable "machine_type" {
@@ -56,7 +56,7 @@ variable "db_disk_size"{
 variable "custom_image" {
   description = "The custom image for the boot disk of the compute instance"
   type        = string
-  default     = "centos-8-image-20240328190006"
+  default     = "centos-8-image-20240403190418"
 }
 
 variable "webapp_reserve_address" {
@@ -83,8 +83,8 @@ variable "domain_name" {
   default     = "bharathbhaskar.me."
 }
 
-variable "sql_database_name" {
-  description = "Sql Database Name"
-  type        =  string
-  default     = "Users"
+variable "mailgun_api_key"{
+  description = "Mailgun API Key"
+  type        = string
+  default     = "3aa5b7aec14341f5adb31b70619144ff-f68a26c9-44c6d1a4"
 }
