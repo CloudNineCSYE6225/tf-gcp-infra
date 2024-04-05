@@ -111,7 +111,7 @@ resource "google_sql_database_instance" "mysql_instance" {
 
 resource "google_sql_database" "mysql_database" {
   for_each = google_compute_network.vpc_name
-  name = "Users"
+  name = var.sql_database_name
   instance = google_sql_database_instance.mysql_instance[each.key].name
 }
 

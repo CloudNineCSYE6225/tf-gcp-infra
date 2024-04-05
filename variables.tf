@@ -8,7 +8,7 @@ variable "project_id" {
 variable "vpc_name" {
   description = "The name of the VPC network"
   type        = list(string)
-  default     = ["cloud-vpc25"]
+  default     = ["cloud-vpc4"]
 }
 
 variable "zone"{
@@ -87,4 +87,9 @@ variable "mailgun_api_key"{
   description = "Mailgun API Key"
   type        = string
   default     = "3aa5b7aec14341f5adb31b70619144ff-f68a26c9-44c6d1a4"
+}
+variable "sql_database_name" {
+  description = "Sql Database Name"
+  type        =  string
+  default     = "Users"
 }
