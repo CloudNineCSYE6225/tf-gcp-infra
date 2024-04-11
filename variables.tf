@@ -8,7 +8,7 @@ variable "project_id" {
 variable "vpc_name" {
   description = "The name of the VPC network"
   type        = list(string)
-  default     = ["cloud-vpc59"]
+  default     = ["cloud-vpc2"]
 }
 
 variable "zone"{

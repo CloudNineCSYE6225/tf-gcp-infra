@@ -45,7 +45,7 @@ resource "google_compute_firewall" "allow_application_traffic" {
 
   allow {
     protocol = "tcp"
-    ports    = ["8080","22"]
+    ports    = ["8080"]
   }
 
   source_ranges = ["0.0.0.0/0"]
@@ -113,7 +113,7 @@ resource "google_sql_database_instance" "mysql_instance" {
 
 resource "google_sql_database" "mysql_database" {
   for_each = google_compute_network.vpc_name
-  name = "Users"
+  name = var.sql_database_name
   instance = google_sql_database_instance.mysql_instance[each.key].name
 }
 
@@ -213,7 +213,7 @@ resource "google_compute_region_autoscaler" "webapp_autoscaler" {
   target = google_compute_region_instance_group_manager.webapp_group_manager.self_link
   
   autoscaling_policy {
-    max_replicas    = 10
+    max_replicas    = 6
     min_replicas    = 3
     cooldown_period = 60
     cpu_utilization {
