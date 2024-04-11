@@ -45,7 +45,7 @@ resource "google_compute_firewall" "allow_application_traffic" {
 
   allow {
     protocol = "tcp"
-    ports    = ["8080"]
+    ports    = ["8080","22"]
   }
 
   source_ranges = ["0.0.0.0/0"]
@@ -87,6 +87,7 @@ resource "google_sql_database_instance" "mysql_instance" {
   database_version = "MYSQL_8_0"
   region = var.region
   deletion_protection = false
+  encryption_key_name = google_kms_crypto_key.cloudsql_encryption_key.id
   
 
   settings {
@@ -100,6 +101,7 @@ resource "google_sql_database_instance" "mysql_instance" {
       private_network = google_compute_network.vpc_name[each.key].self_link
     }
 
+
     backup_configuration{
       binary_log_enabled = true
       enabled = true
@@ -111,7 +113,7 @@ resource "google_sql_database_instance" "mysql_instance" {
 
 resource "google_sql_database" "mysql_database" {
   for_each = google_compute_network.vpc_name
-  name = var.sql_database_name
+  name = "Users"
   instance = google_sql_database_instance.mysql_instance[each.key].name
 }
 
@@ -138,13 +140,17 @@ resource "google_compute_instance_template" "webapp_template" {
     boot         = true
     disk_size_gb = 100  // Correctly specifying the disk size here
     disk_type    = "pd-balanced"
+
+
   }
+
+  
 
   network_interface {
     network = google_compute_network.vpc_name[var.vpc_name[0]].self_link
     subnetwork = google_compute_subnetwork.webapp[var.vpc_name[0]].self_link
 
-    # access_config {}
+    access_config {}
   }
 
   service_account {
@@ -192,6 +198,12 @@ resource "google_compute_region_instance_group_manager" "webapp_group_manager" {
     port = 8080
   }
 
+  auto_healing_policies {
+    health_check      = google_compute_health_check.webapp_health_check.id
+    initial_delay_sec = 300
+  }
+
+
 
 }
 
@@ -202,7 +214,7 @@ resource "google_compute_region_autoscaler" "webapp_autoscaler" {
   
   autoscaling_policy {
     max_replicas    = 10
-    min_replicas    = 1
+    min_replicas    = 3
     cooldown_period = 60
     cpu_utilization {
       target = 0.05
@@ -296,8 +308,12 @@ resource "google_project_iam_binding" "pubsub_publisher_binding" {
 }
 
 resource "google_storage_bucket" "cloud_functions_bucket" {
-  name     = "cloud-function-bucketz"
-  location = "US"
+  name     = "cloud-functionz-buckets"
+  location = var.region
+
+  depends_on = [
+    google_kms_crypto_key_iam_binding.storage_encryption_key_iam_binding
+  ]
 }
 
 resource "google_cloudfunctions_function" "verify_email_function" {
@@ -348,6 +364,92 @@ resource "google_pubsub_subscription" "verify_email_subscription" {
   topic = google_pubsub_topic.verify_email_topic.name
 
   ack_deadline_seconds = 20
+}
+
+resource "google_kms_key_ring" "key_ring" {
+  name     = "my-key-rings1"
+  location = var.region  # Ensure this is the region where you are deploying your resources
+  project  = var.project_id
+}
+
+resource "google_kms_crypto_key" "vm_encryption_key" {
+  name            = "vm-encryption-key"
+  key_ring        = google_kms_key_ring.key_ring.id
+  rotation_period = "2592000s"  # 30 days in seconds
+
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  purpose = "ENCRYPT_DECRYPT"
+}
+
+resource "google_kms_crypto_key" "cloudsql_encryption_key" {
+  name            = "cloudsql-encryption-key"
+  key_ring        = google_kms_key_ring.key_ring.id
+  rotation_period = "2592000s"  # 30 days in seconds
+
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  purpose = "ENCRYPT_DECRYPT"
+}
+
+resource "google_kms_crypto_key" "storage_encryption_key" {
+  name            = "storage-encryption-key"
+  key_ring        = google_kms_key_ring.key_ring.id
+  rotation_period = "2592000s"  # 30 days in seconds
+
+  lifecycle {
+    prevent_destroy = false
+  }
+
+  purpose = "ENCRYPT_DECRYPT"
+}
+
+
+
+resource "google_project_service_identity" "cloudsql_sa" {
+  provider = google-beta
+
+  project = var.project_id
+  service = "sqladmin.googleapis.com"
+}
+
+resource "google_project_service_identity" "cloudstorage_sa" {
+  provider = google-beta
+
+  project = var.project_id
+  service = "storage.googleapis.com"
+}
+
+
+resource "google_kms_crypto_key_iam_binding" "cloudsql_crypto_key_iam_binding" {
+  crypto_key_id = google_kms_crypto_key.cloudsql_encryption_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  members = [
+    "serviceAccount:${google_project_service_identity.cloudsql_sa.email}"
+  ]
+}
+
+resource "google_kms_crypto_key_iam_binding" "storage_encryption_key_iam_binding" {
+
+
+  crypto_key_id = google_kms_crypto_key.storage_encryption_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  members = [
+    "serviceAccount:${google_service_account.cloud_function_service_acc.email}"
+
+  ]
+}
+
+resource "google_kms_crypto_key_iam_binding" "vm_crypto_key_iam_binding" {
+  crypto_key_id = google_kms_crypto_key.vm_encryption_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  members = [
+    "serviceAccount:${google_service_account.webapp_service_acc.email}"
+  ]
 }
 
 
