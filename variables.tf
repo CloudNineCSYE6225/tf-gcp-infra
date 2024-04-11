@@ -8,7 +8,7 @@ variable "project_id" {
 variable "vpc_name" {
   description = "The name of the VPC network"
   type        = list(string)
-  default     = ["cloud-vpc4"]
+  default     = ["cloud-vpc59"]
 }
 
 variable "zone"{
@@ -38,7 +38,7 @@ variable "db_subnet_cidr" {
 variable "machine_type" {
   description = "The machine type"
   type        = string
-  default     = "n1-standard-4" 
+  default     = "e2-medium" 
 }
 
 variable "db_disk_type"{
@@ -56,7 +56,7 @@ variable "db_disk_size"{
 variable "custom_image" {
   description = "The custom image for the boot disk of the compute instance"
   type        = string
-  default     = "centos-8-image-20240403190418"
+  default     = "centos-8-image-20240408195431" //centos-8-image-20240403190418
 }
 
 variable "webapp_reserve_address" {
